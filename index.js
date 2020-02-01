@@ -2,6 +2,7 @@ require('dotenv').config();
 const axios = require('axios');
 const OAuth = require('oauth-1.0a');
 const crypto = require('crypto');
+const express = require('express');
 
 const oauth = OAuth({
   consumer: {
@@ -23,17 +24,41 @@ const request_data = {
   data: { status: 'Hello world' },
 };
 
+const request_token = {
+  url: 'https://api.twitter.com/oauth/request_token',
+  method: 'POST'
+}
+
+const authorize = {
+  url: 'https://api.twitter.com/oauth/authorize',
+  method: 'GET'
+}
+
 const token = {
   key: process.env.ACCESS_TOKEN,
   secret: process.env.ACCESS_SECRET,
 };
 
-const data = oauth.authorize(request_data, token);
+const app = express();
 
-const config = {
-   headers: { 'authorization': `OAuth oauth_consumer_key="${data.oauth_consumer_key}", oauth_nonce="${data.oauth_nonce}", oauth_signature="${data.oauth_signature}", oauth_signature_method="${data.oauth_signature_method}", oauth_timestamp="${data.oauth_timestamp}", oauth_token="${data.oauth_token}", oauth_version="${data.oauth_version}"` }
-};
+app.get('/', (req, res) => {
+  axios.post(request_token.url, {}, { headers: oauth.toHeader(oauth.authorize(request_token, token)) } )
+    .then(resToken => {
+      const regex = /(.+?)=(.+?)&/gm;
+      let m;
+      const fetchedToken = {};
+      while ((m = regex.exec(resToken.data)) !== null) {
+        if (m.index === regex.lastIndex) regex.lastIndex++;
+        fetchedToken[m[1]] = m[2];
+      }
+      token.key = fetchedToken.oauth_token;
+      token.secret = fetchedToken.oauth_token_secret;
 
-axios.post(request_data.url, request_data.data, config)
-  .then(res => console.log(res.toJSON()))
-  .catch(err => console.log(err.toJSON()));
+      axios.get(authorize.url+'?oauth_token='+fetchedToken.oauth_token, { headers: oauth.toHeader(oauth.authorize(authorize, token)) } )
+        .then(resAuthorize => res.send(resAuthorize.data))
+        .catch(err => console.log(err));
+    })
+    .catch(err => console.log(err));
+})
+
+app.listen(5000);
